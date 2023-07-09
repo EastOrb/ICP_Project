@@ -1,228 +1,222 @@
-//import the necessary methods from azle
-import {$init, $query, $update, Record, StableBTreeMap, Vec, match, Result, nat64, ic, Opt, nat, nat8,Principal} from 'azle';
+// Import necessary methods from azle
+import {
+  $init,
+  $query,
+  $update,
+  Record,
+  StableBTreeMap,
+  Vec,
+  match,
+  Result,
+  nat64,
+  ic,
+  Opt,
+  nat,
+  nat8,
+  Principal,
+} from 'azle';
 
-//define a Record to store the all the details about the task
-type Task = Record <{
-    title : string; //title of the task
-    description : string; //a brief description of the task
-    assignedTo : string; // the team member to whom it is assigned
-    isDone: boolean; // to track whether the task has been completed 
-    startTIme : nat64; //the time at which the task started
-    deadline: nat8; //deadline in hours
-}>
+// Define a Record to store all the details about the task
+type Task = Record<{
+  title: string; // Title of the task
+  description: string; // A brief description of the task
+  assignedTo: string; // The team member to whom it is assigned
+  isDone: boolean; // To track whether the task has been completed
+  startTime: nat64; // The time at which the task started
+  deadline: nat; // Deadline in hours
+}>;
 
-//define a Record to store the user input for the task
-type TaskLoad = Record <{
-    title : string;
-    description: string;
-    assignedTo: string;
-    deadline: nat8;
-}>
+// Define a Record to store the user input for the task
+type TaskLoad = Record<{
+  title: string;
+  description: string;
+  assignedTo: string;
+  deadline: nat;
+}>;
 
-//replace this with your principal from the terminal or the Internet Identity
-//admin principal ID in a string format
-var AdminPrincipal : string = "2vxsx-fae";
+// Replace this with your principal from the terminal or the Internet Identity
+// Admin principal ID in a string format
+var adminPrincipal: string = '2vxsx-fae';
 
+// Store team members
+let memberCount: nat8 = 0;
+const memberStore = new StableBTreeMap<nat8, Principal>(0, 100, 1000);
 
-//store team members
-let memberCount : nat8 = 0;
-const memberStore = new StableBTreeMap<nat8, Principal>(0,100,1000);
+// Store tasks
+let taskCount: nat8 = 0;
+const taskStore = new StableBTreeMap<nat8, Task>(1, 100, 1000);
 
-//store tasks 
-let taskCount : nat8 = 0;
-const taskStore = new StableBTreeMap<nat8, Task>(1,100,1000);
-
-//set the contract deployer as the admin
+// Set the contract deployer as the admin
 $init;
-export function init (admin : string) : void{
-    AdminPrincipal = admin;
-};
-
-//return the one that deployed the contract
-$query;
-export function contractOwner() : Principal{
-    return Principal.fromText(AdminPrincipal)
+export function init(admin: string): void {
+  adminPrincipal = admin;
 }
-//add new team member by the admin
+
+// Return the one who deployed the contract
+$query;
+export function contractOwner(): Principal {
+  return Principal.fromText(adminPrincipal);
+}
+
+// Add a new team member by the admin
 $update;
-export function addMember( principalID : string) : Result<nat8, string>{
-    if(ic.caller().toString() !== AdminPrincipal){
-        return Result.Err<nat8,string>("You are not authorised to add new members");
-    }
-    memberCount = (memberCount + 1);
-    memberStore.insert(memberCount, Principal.fromText(principalID));
-    return Result.Ok(memberCount);
+export function addMember(principalID: Principal): Result<nat8, string> {
+  if (ic.caller().toString() !== adminPrincipal) {
+    return Result.Err('You are not authorized to add new members');
+  }
+  memberCount = memberCount + 1;
+  memberStore.insert(memberCount, principalID);
+  return Result.Ok(memberCount);
 }
 
-
-//delete team member by the admin
+// Delete a team member by the admin
 $update;
-export function deleteMember( id : nat8) : Result<string, string>{
-    if(ic.caller().toString() !== AdminPrincipal){
-        return Result.Err<string,string>("You are not authorised to delete members");
-    }
-    
-    return match(memberStore.remove(id),{
-        Some : (deletedID) =>{ return Result.Ok<string,string>("Member has been deleted")},
-        None : ()=>{ return Result.Err<string,string>("Member cannot be found")}
-    });
+export function deleteMember(id: nat8): Result<string, string> {
+  if (ic.caller().toString() !== adminPrincipal) {
+    return Result.Err('You are not authorized to delete members');
+  }
+
+  const removedMember = memberStore.remove(id);
+  if (removedMember === null) {
+    return Result.Err('Member not found');
+  }
+
+  return Result.Ok('Member has been deleted');
 }
 
-
-//get team member by id
+// Get a team member by ID
 $query;
-export function getMember(id : nat8) : Result<Principal,string>{
-    return match(memberStore.get(id),{
-        Some: (member)=>{ return Result.Ok<Principal,string>(member)},
-        None: () =>{ return Result.Err<Principal,string>("Member does not exist")}
-    });
+export function getMember(id: nat8): Result<Principal, string> {
+  const member = memberStore.get(id);
+  if (member === null) {
+    return Result.Err('Member does not exist');
+  }
+  return Result.Ok(member);
 }
 
-
-//update the principal of the team member by the admin
+// Update the principal of the team member by the admin
 $update;
-export function updateMember(id : nat8, _newName : string) : Result<nat8,string>{
-    if(ic.caller().toString() !== AdminPrincipal){
-        return Result.Err<nat8,string>("You are not authorised to update members");
-    }
-    return match(memberStore.get(id),{
-        Some : ()=>{
-            if(_newName.length == 0){
-                return Result.Err<nat8, string>("new Principal cant be empty");
-            };
-            memberStore.insert(id, Principal.fromText(_newName));
-            return Result.Ok<nat8,string>(id);
-        },
-        None : ()=>{ return Result.Err<nat8,string>("Member has not been found")}
+export function updateMember(id: nat8, newName: string): Result<nat8, string> {
+  if (ic.caller().toString() !== adminPrincipal) {
+    return Result.Err('You are not authorized to update members');
+  }
 
-    });
+  if (newName.length === 0) {
+    return Result.Err('New principal cannot be empty');
+  }
+
+  const principalID = Principal.fromText(newName);
+  memberStore.insert(id, principalID);
+  return Result.Ok(id);
 }
 
-//get all team members
+// Get all team members
 $query;
-export function getAllMembers() : Result<Vec<Principal>, string>{
-    if((memberStore.values()).length == 0){
-        return Result.Err<Vec<Principal>,string>("No family members yet");
-    };
-    return Result.Ok<Vec<Principal>,string>(memberStore.values());
+export function getAllMembers(): Result<Vec<Principal>, string> {
+  const members = memberStore.values();
+  if (members.length === 0) {
+    return Result.Err('No family members yet');
+  }
+  return Result.Ok(members);
 }
 
-//get all tasks stored in the contract
+// Get all tasks stored in the contract
 $query;
-export function getAllTasks() : Result<Vec<Task>,string>{
-    if((taskStore.values()).length === 0){
-        return Result.Err<Vec<Task>,string>("No tasks yet");
-    };
-    return Result.Ok<Vec<Task>,string>(taskStore.values());
+export function getAllTasks(): Result<Vec<Task>, string> {
+  const tasks = taskStore.values();
+  if (tasks.length === 0) {
+    return Result.Err('No tasks yet');
+  }
+  return Result.Ok(tasks);
 }
 
-///get specific task by its id
+// Get a specific task by its ID
 $query;
-export function getTask(id : nat8) : Result<Task,string>{
-    return match(taskStore.get(id),{
-        Some : (task)=>{ return Result.Ok<Task,string>(task)},
-        None : ()=>{ return Result.Err<Task,string>("No task found with that id")}
-    });
-};
+export function getTask(id: nat8): Result<Task, string> {
+  const task = taskStore.get(id);
+  if (task === null) {
+    return Result.Err('No task found with that ID');
+  }
+  return Result.Ok(task);
+}
 
-//delete task by the admin using its id
+// Delete a task by the admin using its ID
 $update;
-export function deleteTask(id : nat8) : Result<string,string>{
-    if(ic.caller().toString() !== AdminPrincipal){
-        return Result.Err<string,string>("You are not authorised to update members");
-    }
-    return match(taskStore.remove(id),{
-        Some : ()=>{ return Result.Ok<string,string>("task deleted")},
-        None : ()=>{ return Result.Err<string,string>("No task found with that id")}
-    });
-};
+export function deleteTask(id: nat8): Result<string, string> {
+  if (ic.caller().toString() !== adminPrincipal) {
+    return Result.Err('You are not authorized to delete tasks');
+  }
 
-//check if the principal ID is among the team  members
+  const removedTask = taskStore.remove(id);
+  if (removedTask === null) {
+    return Result.Err('No task found with that ID');
+  }
+
+  return Result.Ok('Task deleted');
+}
+
+// Check if the principal ID is among the team members
 $query;
-export function isMember( p : string) : boolean{
-    const ismember = memberStore.values().filter((member) => member.toString()  === p);
-    if(ismember.length > 0){
-        return true;
-    }
-    return false;
-};
+export function isMember(principal: string): boolean {
+  const principalID = Principal.fromText(principal);
+  return memberStore.values().some((member) => member.isEqual(principalID));
+}
 
-
-//return the tasks for a specific team member depending on the condition(isDone)
+// Return the tasks for a specific team member based on the condition (isDone)
 $query;
-export function personalTasks( p : string, condition:boolean) : Vec<Task>{
-    const myTasks = taskStore.values().filter((task) => ((task.assignedTo  === p) && task.isDone === condition));
-    return myTasks;
+export function personalTasks(principal: string, condition: boolean): Vec<Task> {
+  const tasks = taskStore.values();
+  return tasks.filter((task) => task.assignedTo === principal && task.isDone === condition);
+}
+
+// Calculate and convert hours to nanoseconds
+const hoursToNanoseconds = (hours: nat): nat64 => {
+  const nanosecondsPerHour = 60n * 60n * 1_000_000_000n;
+  return nat64.fromBigInt(hours * nanosecondsPerHour);
 };
 
-//calculate and convert the hours to nanoseconds
-const hoursToNanoseconds = (hours: nat8): number => {
-    const minutes = hours * 60;
-    const seconds = minutes * 60;
-    const milliseconds = seconds * 1000;
-    const microseconds = milliseconds * 1000;
-    const nanoseconds = microseconds * 1000;
-    return nanoseconds;
-  };
-
-
-//search for tasks by the title or description
+// Search for tasks by the title or description
 $query;
 export function searchTasks(query: string): Result<Vec<Task>, string> {
-    const myTasks = taskStore.values();
-    const matchingTasks: Vec<Task> = myTasks.filter((task) => {
-        const inTitle = task.title.toLowerCase().includes(query.toLowerCase());
-        const inDescription = task.description.toLowerCase().includes(query.toLowerCase());
-        return inTitle || inDescription;
-    });
-    return Result.Ok(matchingTasks);
+  const matchingTasks = taskStore.values().filter((task) => {
+    const inTitle = task.title.toLowerCase().includes(query.toLowerCase());
+    const inDescription = task.description.toLowerCase().includes(query.toLowerCase());
+    return inTitle || inDescription;
+  });
+
+  return Result.Ok(matchingTasks);
 }
 
-
-//add a task by the admin and assign it to the team member
+// Add a task by the admin and assign it to a team member
 $update;
-export function addTask( payload: TaskLoad) : Result<nat8,string>{
-    if(!(ic.caller().toString() === AdminPrincipal)){
-        return Result.Err<nat8,string>("Only admins can add tasks");
-    }
-    if(!isMember(payload.assignedTo)){
-        return Result.Err<nat8,string>("Assigned Member does not exist");
-    };
-    if( payload.title.length === 0 || payload.description.length === 0 || payload.deadline < 1){
-        return Result.Err<nat8,string>("Malformed values");
-    }
+export function addTask(payload: TaskLoad): Result<nat8, string> {
+  if (ic.caller().toString() !== adminPrincipal) {
+    return Result.Err('Only admins can add tasks');
+  }
 
-    const newTask : Task={
-        ...payload,
-        startTIme : ic.time(),
-        isDone : false,
-    };
+  const principalID = Principal.fromText(payload.assignedTo);
+  if (!isMember(payload.assignedTo)) {
+    return Result.Err('Assigned member does not exist');
+  }
 
-    taskCount = (taskCount +1);
-    taskStore.insert(taskCount, newTask);
-    return Result.Ok<nat8,string>(taskCount);
-};
+  if (payload.title.length === 0 || payload.description.length === 0 || payload.deadline < 1) {
+    return Result.Err('Malformed values');
+  }
 
-//complete the task by the member
-$update;
-export function completeTask(id : nat8) : Result<string,string>{
-    return match(taskStore.get(id),{
-        None: ()=>{ return Result.Err<string,string>("Task not found")},
-        Some : (task) =>{
-            if(task.assignedTo !== ic.caller().toString()){
-                return Result.Err<string,string>("You were not assigned to this task")
-            }
-            const taskDeadline = task.startTIme + BigInt(hoursToNanoseconds(task.deadline));
-            if(taskDeadline < ic.time()){
-                return Result.Err<string,string>("Deadline has already passed")
-            }
+  const newTask: Task = {
+    title: payload.title,
+    description: payload.description,
+    assignedTo: payload.assignedTo,
+    isDone: false,
+    startTime: ic.time(),
+    deadline: payload.deadline,
+  };
 
-            const newTask : Task = {
-                ...task,
-                isDone : true,
-            };
-            taskStore.insert(id, newTask);
-            return Result.Ok<string,string>("Task completed successfully");
-        }
-    });
+  taskCount = taskCount + 1;
+  taskStore.insert(taskCount, newTask);
+  return Result.Ok(taskCount);
 }
+
+// Complete a task by the member
+$update;
+export function completeTask(id
